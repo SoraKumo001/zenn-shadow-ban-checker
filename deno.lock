@@ -1,5 +1,16 @@
 {
   "version": "3",
+  "packages": {
+    "specifiers": {
+      "npm:@node-libraries/semaphore": "npm:@node-libraries/semaphore@1.0.3"
+    },
+    "npm": {
+      "@node-libraries/semaphore@1.0.3": {
+        "integrity": "sha512-rHAzAaVa8hvJFmy9F9Y0sCZeIpaoSodCUXG/p1Fmui6qdsTXnJ5o0pjHec247bOhcF0dozYXERVOLo1TQ6XUIQ==",
+        "dependencies": {}
+      }
+    }
+  },
   "redirects": {
     "https://deno.land/std/http/file_server.ts": "https://deno.land/std@0.224.0/http/file_server.ts"
   },

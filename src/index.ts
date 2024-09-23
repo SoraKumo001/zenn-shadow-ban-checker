@@ -1,4 +1,5 @@
 import { serveDir } from "https://deno.land/std/http/file_server.ts";
+import { semaphore } from "npm:@node-libraries/semaphore";
 
 type ZennArticles = {
   articles: {
@@ -33,9 +34,10 @@ const localDate = (date: string) => {
   });
 };
 
-const cache = await caches.open("zenn-shadow-ban-checker");
+const cache = await caches.open("zenn-shadow-ban-checker0");
 
 const getArticles = async (username: string) => {
+  console.info(`fetching articles of '${username}'`);
   const articles: ZennArticles["articles"] = [];
   let page = 1;
   do {
@@ -45,18 +47,20 @@ const getArticles = async (username: string) => {
     articles.push(...result.articles);
     page = result.next_page;
   } while (page !== null);
+  const s = semaphore(5);
   const result = articles.map(({ slug }) => {
     const url = new URL(`https://zenn.dev/api/articles/${slug}`);
     return cache
       .match(url)
       .then((res) => {
-        return (
-          res ??
-          fetch(url).then(async (res) => {
+        if (res) return res;
+        s.acquire();
+        return fetch(url)
+          .then(async (res) => {
             await cache.put(url, res.clone());
             return res;
           })
-        );
+          .finally(() => s.release());
       })
       .then((res) => res.json() as Promise<ZennArticle>)
       .then((res) => res.article);
@@ -79,13 +83,18 @@ Deno.serve(async (request) => {
   const name = url.searchParams.get("name") ?? "";
   const result = !name
     ? []
-    : await getArticles(name).then((articles) =>
-        articles.sort(
-          (a, b) =>
-            new Date(b.published_at).getTime() -
-            new Date(a.published_at).getTime()
+    : await getArticles(name)
+        .then((articles) =>
+          articles.sort(
+            (a, b) =>
+              new Date(b.published_at).getTime() -
+              new Date(a.published_at).getTime()
+          )
         )
-      );
+        .catch((e) => {
+          console.error(e);
+          return undefined;
+        });
 
   const title = "Zenn's Shadow Ban checker";
   const description = "Check for shadow banning in Zenn.";
@@ -104,18 +113,25 @@ Deno.serve(async (request) => {
     `<form><input name='name'  placeholder='user-name' value='${name.replace(
       /'/g,
       "&#039;"
-    )}'><input type='submit'></form><hr>`,
-    "<ul style='list-style: none'>"
+    )}'><input type='submit'></form><hr>`
   );
-  for (const article of result) {
+  if (result) {
+    html.push("<ul style='list-style: none'>");
+    for (const article of result) {
+      html.push(
+        `<li style="display:flex;gap:8px;"><span>${
+          article.should_noindex ? "👻" : "🩷"
+        }</span><span>${localDate(
+          article.published_at
+        )}</span><a href='https://zenn.dev${article.path}'>${escapeHtml(
+          article.title
+        )}</a></li>`
+      );
+    }
+    html.push("</ul>");
+  } else {
     html.push(
-      `<li style="display:flex;gap:8px;"><span>${
-        article.should_noindex ? "👻" : "🩷"
-      }</span><span>${localDate(
-        article.published_at
-      )}</span><a href='https://zenn.dev${article.path}'>${escapeHtml(
-        article.title
-      )}</a></li>`
+      "<p>The access limit on the Cloudflare side has been reached. Please allow some time.</p>"
     );
   }
   html.push("</ul></body></html>");
