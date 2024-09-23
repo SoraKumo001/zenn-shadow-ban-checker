@@ -4,6 +4,9 @@ import { semaphore } from "npm:@node-libraries/semaphore";
 type ZennArticles = {
   articles: {
     slug: string;
+    user: {
+      username: string;
+    };
   }[];
   next_page: number;
 };
@@ -34,36 +37,42 @@ const localDate = (date: string) => {
   });
 };
 
-const cache = await caches.open("zenn-shadow-ban-checker0");
+const cache = await caches.open("zenn-shadow-ban-checker");
+
+const cacheFetch = (url: string | URL) => {
+  return cache.match(url).then((response) => {
+    if (response) return response;
+    return fetch(url).then((response) => {
+      cache.put(url, response.clone());
+      return response;
+    });
+  });
+};
 
 const getArticles = async (username: string) => {
   console.info(`fetching articles of '${username}'`);
   const articles: ZennArticles["articles"] = [];
   let page = 1;
   do {
-    const result: ZennArticles = await fetch(
-      `https://zenn.dev/api/articles?username=${username}&page=${page}`
+    const result: ZennArticles = await cacheFetch(
+      `https://zenn.dev/api/articles?username=${encodeURIComponent(
+        username
+      )}&page=${page}`
     ).then((res) => res.json());
+    if (result.articles[0].user.username !== username) {
+      break;
+    }
     articles.push(...result.articles);
     page = result.next_page;
   } while (page !== null);
   const s = semaphore(5);
   const result = articles.map(({ slug }) => {
     const url = new URL(`https://zenn.dev/api/articles/${slug}`);
-    return cache
-      .match(url)
-      .then((res) => {
-        if (res) return res;
-        s.acquire();
-        return fetch(url)
-          .then(async (res) => {
-            await cache.put(url, res.clone());
-            return res;
-          })
-          .finally(() => s.release());
-      })
+    s.acquire();
+    return cacheFetch(url)
       .then((res) => res.json() as Promise<ZennArticle>)
-      .then((res) => res.article);
+      .then((res) => res.article)
+      .finally(() => s.release());
   });
   return Promise.all(result);
 };
