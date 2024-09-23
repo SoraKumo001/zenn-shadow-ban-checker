@@ -1,0 +1,12 @@
+{
+  "name": "zenn-shadow-ban-checker",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "SoraKumo <info@croud.jp>",
+  "license": "MIT",
+  "scripts": {
+    "dev": "deno run --watch --allow-all src/index.ts",
+    "deploy": "npx next-exec -- deployctl deploy --project zenn-shadow-ban-checker --build --prod"
+  },
+  "repository": "https://github.com/SoraKumo001/deno-wasm-image-optimization"
+}
