@@ -37,15 +37,25 @@ const localDate = (date: string) => {
   });
 };
 
-const cache = await caches.open("zenn-shadow-ban-checker");
+const cache = await caches.open("zenn-shadow-ban-checker4");
 
-const cacheFetch = (url: string | URL) => {
-  return cache.match(url).then((response) => {
+const cacheFetch = (
+  url: string | URL,
+  s?: ReturnType<typeof semaphore>,
+  sleep?: number
+) => {
+  return cache.match(url).then(async (response) => {
     if (response) return response;
-    return fetch(url).then((response) => {
-      cache.put(url, response.clone());
-      return response;
-    });
+    await s?.acquire();
+    return fetch(url)
+      .then((response) => {
+        response.status === 200 && cache.put(url, response.clone());
+        return response;
+      })
+      .finally(async () => {
+        if (sleep) await new Promise((resolve) => setTimeout(resolve, sleep));
+        s?.release();
+      });
   });
 };
 
@@ -66,15 +76,16 @@ const getArticles = async (username: string) => {
     page = result.next_page;
   } while (page !== null);
   const s = semaphore(5);
-  const result = articles.map(({ slug }) => {
+  const result = articles.map(async ({ slug }) => {
     const url = new URL(`https://zenn.dev/api/articles/${slug}`);
-    s.acquire();
-    return cacheFetch(url)
+    return cacheFetch(url, s, 500)
       .then((res) => res.json() as Promise<ZennArticle>)
       .then((res) => res.article)
-      .finally(() => s.release());
+      .catch(() => {
+        return undefined;
+      });
   });
-  return Promise.all(result);
+  return (await Promise.all(result)).flatMap((v) => (v ? [v] : []));
 };
 
 Deno.serve(async (request) => {
