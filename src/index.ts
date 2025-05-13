@@ -37,7 +37,7 @@ const localDate = (date: string) => {
   });
 };
 
-const cache = await caches.open("zenn-shadow-ban-checker4");
+const cache = await caches.open("zenn-shadow-ban-checker5");
 
 const cacheFetch = (
   url: string | URL,
